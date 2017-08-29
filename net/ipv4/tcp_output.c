@@ -2302,6 +2302,7 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	bool is_cwnd_limited = false, is_rwnd_limited = false;
 	u32 max_segs;
 	u32 pacing_allowed_segs = 0;
+	bool notify = false;
 
 	sent_pkts = 0;
 
@@ -2322,8 +2323,10 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	    !tcp_pacing_timer_check(sk) &&
 	    tcp_send_head(sk)) {
 		pacing_allowed_segs = 1;
-		if (ca_ops->pacing_timer_expired)
+		if (ca_ops->pacing_timer_expired) {
 			ca_ops->pacing_timer_expired(sk);
+			notify = true;
+		}
 		if (ca_ops->get_segs_per_round)
 			pacing_allowed_segs = ca_ops->get_segs_per_round(sk);
 	}
@@ -2401,6 +2404,9 @@ repair:
 		if (push_one)
 			break;
 	}
+
+	if (ca_ops->segments_sent && notify)
+		ca_ops->segments_sent(sk, sent_pkts);
 
 	if (is_rwnd_limited)
 		tcp_chrono_start(sk, TCP_CHRONO_RWND_LIMITED);
@@ -2973,6 +2979,8 @@ void tcp_xmit_retransmit_queue(struct sock *sk)
 	struct sk_buff *skb, *rtx_head, *hole = NULL;
 	struct tcp_sock *tp = tcp_sk(sk);
 	u32 pacing_allowed_segs = 0;
+	u32 sent_pkts = 0;
+	bool notify = false;
 	u32 max_segs;
 	int mib_idx;
 
@@ -2986,8 +2994,10 @@ void tcp_xmit_retransmit_queue(struct sock *sk)
 	    !tcp_pacing_timer_check(sk) &&
 	    tcp_send_head(sk)) {
 		pacing_allowed_segs = 1;
-		if (ca_ops->pacing_timer_expired)
+		if (ca_ops->pacing_timer_expired) {
 			ca_ops->pacing_timer_expired(sk);
+			notify = true;
+		}
 		if (ca_ops->get_segs_per_round)
 			pacing_allowed_segs = ca_ops->get_segs_per_round(sk);
 	}
@@ -3047,7 +3057,11 @@ void tcp_xmit_retransmit_queue(struct sock *sk)
 			inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 						  inet_csk(sk)->icsk_rto,
 						  TCP_RTO_MAX);
+		sent_pkts += tcp_skb_pcount(skb);
 	}
+
+	if (ca_ops->segments_sent && notify)
+		ca_ops->segments_sent(sk, sent_pkts);
 }
 
 /* We allow to exceed memory limits for FIN packets to expedite

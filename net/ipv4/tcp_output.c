@@ -45,6 +45,10 @@
 
 #include <trace/events/tcp.h>
 
+#define NOW ktime_to_us(ktime_get())
+#define SPORT(sk) ntohs(inet_sk(sk)->inet_sport)
+#define DPORT(sk) ntohs(inet_sk(sk)->inet_dport)
+
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp);
 
@@ -1180,6 +1184,9 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			       sizeof(struct inet6_skb_parm)));
 
 	err = icsk->icsk_af_ops->queue_xmit(sk, skb, &inet->cork.fl);
+	pr_debug("%llu sport: %hu dport: %hu [%s] seq %u ack %u window %u len %u err %i \n",
+		 NOW, SPORT(sk), DPORT(sk),  __func__, ntohl(th->seq), ntohl(th->ack_seq),
+		 ntohs(th->window), skb->len, err);
 
 	if (unlikely(err > 0)) {
 		tcp_enter_cwr(sk);
